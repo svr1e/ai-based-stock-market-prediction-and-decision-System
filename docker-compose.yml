@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  # ─── MongoDB ────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: stockai-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: stockai
+    restart: unless-stopped
+    networks:
+      - stockai-network
+
+  # ─── Redis ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: stockai-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - stockai-network
+
+  # ─── FastAPI Backend ─────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    container_name: stockai-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DB=stockai
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+    restart: unless-stopped
+    networks:
+      - stockai-network
+    volumes:
+      - ./backend:/app
+      - ./ml:/app/ml
+
+  # ─── Frontend (Dev) ─────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: stockai-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - stockai-network
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
+volumes:
+  mongodb_data:
+
+networks:
+  stockai-network:
+    driver: bridge
