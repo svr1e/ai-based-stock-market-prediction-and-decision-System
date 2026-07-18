@@ -5,6 +5,11 @@ from schemas.prediction import PredictionRequest, PredictionTimeframe, ModelType
 from datetime import datetime, timedelta
 import random
 import uuid
+import logging
+from routers.stocks import cache_manager
+
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter()
 
@@ -61,6 +66,13 @@ async def create_prediction(
 
     db = get_db()
     base_price = BASE_PRICES.get(symbol, 100.0)
+    try:
+        quote = await cache_manager.get_quote(symbol)
+        if quote and quote.get("c") is not None and quote.get("c") != 0:
+            base_price = quote["c"]
+    except Exception as e:
+        logger.error(f"Error fetching live price for prediction on {symbol}: {e}")
+
     seed = sum(ord(c) for c in symbol + str(datetime.utcnow().date()))
     random.seed(seed)
 

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ALPHA_VANTAGE_API_KEY: str = ""
     NEWS_API_KEY: str = ""
     POLYGON_IO_KEY: str = ""
+    FINNHUB_API_KEY: str = ""
 
     # CORS
     ALLOWED_ORIGINS: list = [
