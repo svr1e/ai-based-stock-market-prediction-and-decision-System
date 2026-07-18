@@ -50,3 +50,4 @@ mini/
 - **Background**: `#050816` (Deep Black)
 - **Accent**: `#00E5FF` (Neon Blue)
 - **Style**: Glassmorphism + Cyber Grid + Neon Glow
+
