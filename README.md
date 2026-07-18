@@ -51,3 +51,9 @@ mini/
 - **Accent**: `#00E5FF` (Neon Blue)
 - **Style**: Glassmorphism + Cyber Grid + Neon Glow
 
+## Team
+- Sai vardhan
+- Chandravardhan
+- Anjan
+- Vijay
+- Rohan
