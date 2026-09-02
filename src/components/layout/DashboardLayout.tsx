@@ -3,19 +3,19 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import { useMarketStore } from '@/store/marketStore';
+import { usePortfolioStore } from '@/store/portfolioStore';
 
 export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { updateStockPrices } = useMarketStore();
+  const fetchLiveStocks = useMarketStore((s) => s.fetchLiveStocks);
+  const fetchPortfolio = usePortfolioStore((s) => s.fetchPortfolio);
 
-  // Simulate live price updates every 3 seconds
+  // Fetch live market data & portfolio once on layout mount
   useEffect(() => {
-    const interval = setInterval(() => {
-      updateStockPrices();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [updateStockPrices]);
+    fetchLiveStocks();
+    fetchPortfolio();
+  }, [fetchLiveStocks, fetchPortfolio]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#050816]">

@@ -3,6 +3,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 from datetime import datetime
 import uuid
 
+from pydantic import BaseModel
+from typing import Optional
 from core.database import get_db
 from core.security import (
     hash_password, verify_password,
@@ -76,8 +78,14 @@ async def login(data: UserLogin):
     db = get_db()
     user = await db.users.find_one({"email": data.email})
 
-    if not user or not verify_password(data.password, user.get("password_hash", "")):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found. Please register first or use Demo Login.")
+
+    # If demo/OAuth user without password, set password on first email login
+    if not user.get("password_hash"):
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"password_hash": hash_password(data.password)}})
+    elif not verify_password(data.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Incorrect password. Please try again.")
 
     if not user.get("is_active"):
         raise HTTPException(status_code=403, detail="Account is disabled")
@@ -179,3 +187,56 @@ async def get_me(user=Depends(get_current_user)):
 async def logout(user=Depends(get_current_user)):
     """Logout (client should discard tokens)."""
     return {"message": "Logged out successfully"}
+
+
+class DemoLoginRequest(BaseModel):
+    name: Optional[str] = "Demo Trader"
+    email: Optional[str] = "demo.user@stockai.com"
+
+
+@router.post("/demo", response_model=TokenResponse)
+async def demo_login(data: Optional[DemoLoginRequest] = None):
+    """Create or login a demo user and return a valid JWT token."""
+    db = get_db()
+    email = data.email if (data and data.email) else "demo.user@stockai.com"
+    name = data.name if (data and data.name) else "Demo Trader"
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        user_id = "demo_user_id" if email == "demo.user@stockai.com" else str(uuid.uuid4())
+        user = {
+            "_id": user_id,
+            "email": email,
+            "name": name,
+            "photo_url": None,
+            "password_hash": None,
+            "plan": "pro",
+            "is_active": True,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
+        await db.users.insert_one(user)
+        # Initialize default fresh portfolio (0 holdings, $0 value)
+        await db.portfolio.update_one(
+            {"user_id": user_id},
+            {
+                "$setOnInsert": {
+                    "_id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "holdings": [],
+                    "created_at": datetime.utcnow(),
+                }
+            },
+            upsert=True
+        )
+
+    access_token = create_access_token({"sub": str(user["_id"])})
+    refresh_token = create_refresh_token({"sub": str(user["_id"])})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": serialize_user(user),
+    }
+

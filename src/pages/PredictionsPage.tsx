@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, TrendingUp, TrendingDown, Minus, ChevronDown, Info } from 'lucide-react';
 import { useMarketStore } from '@/store/marketStore';
@@ -8,16 +8,22 @@ import { formatCurrency } from '@/lib/utils';
 const MODELS = ['Ensemble', 'LSTM', 'GRU', 'XGBoost', 'Random Forest'];
 const TIMEFRAMES = ['1 Day', '7 Days', '30 Days', '90 Days'];
 
-const generatePredictionData = (currentPrice: number, days: number, trend: 'bullish' | 'bearish' | 'sideways') => {
+const generatePredictionData = (currentPrice: number, days: number, trend: 'bullish' | 'bearish' | 'sideways', seedKey: string) => {
   const data = [];
   let price = currentPrice;
   const trendFactor = trend === 'bullish' ? 0.003 : trend === 'bearish' ? -0.003 : 0.0005;
   const past = 30;
 
+  // Simple deterministic seed
+  let seed = 0;
+  for (let c = 0; c < seedKey.length; c++) seed += seedKey.charCodeAt(c);
+
   for (let i = -past; i <= days; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
-    const noise = (Math.random() - 0.48) * price * 0.015;
+    seed = (seed * 9301 + 49297) % 233280;
+    const pseudoRnd = seed / 233280;
+    const noise = (pseudoRnd - 0.48) * price * 0.015;
     price = price + noise + price * trendFactor;
     data.push({
       date: d.toISOString().split('T')[0],
@@ -46,10 +52,24 @@ export default function PredictionsPage() {
   const stock = stocks.find((s) => s.symbol === selectedSymbol) || stocks[0];
   const days = timeframe === '1 Day' ? 1 : timeframe === '7 Days' ? 7 : timeframe === '30 Days' ? 30 : 90;
   const trend = stock.changePercent > 0 ? 'bullish' : stock.changePercent < -1 ? 'bearish' : 'sideways';
-  const predData = generatePredictionData(stock.price, days, trend);
-  const predictedPrice = predData[predData.length - 1].predicted;
-  const priceChange = ((predictedPrice - stock.price) / stock.price) * 100;
-  const confidence = 72 + Math.random() * 20;
+
+  const { predData, predictedPrice, priceChange, confidence } = useMemo(() => {
+    const data = generatePredictionData(stock.price, days, trend, `${stock.symbol}-${model}-${timeframe}`);
+    const lastPrice = data[data.length - 1].predicted || stock.price;
+    const pctChange = ((lastPrice - stock.price) / stock.price) * 100;
+
+    let seed = 0;
+    const key = `${stock.symbol}-${model}`;
+    for (let c = 0; c < key.length; c++) seed += key.charCodeAt(c);
+    const conf = Math.min(96, Math.max(74, 75 + (seed % 19)));
+
+    return {
+      predData: data,
+      predictedPrice: lastPrice,
+      priceChange: pctChange,
+      confidence: conf,
+    };
+  }, [stock.symbol, stock.price, days, trend, model, timeframe]);
 
   const simulatePredict = () => {
     setIsLoading(true);

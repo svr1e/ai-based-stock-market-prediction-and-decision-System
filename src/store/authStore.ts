@@ -14,7 +14,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   registerUser: (email: string, password: string, name: string) => Promise<void>;
   loginWithGoogleToken: (firebaseToken: string) => Promise<void>;
-  mockLogin: (name: string, email: string) => void;
+  mockLogin: (name: string, email: string) => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => void;
 }
@@ -74,18 +74,28 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      mockLogin: (name, email) => {
-        const mockUser: User = {
-          uid: 'mock_uid_' + Math.random().toString(36).slice(2),
-          email,
-          displayName: name,
-          photoURL: null,
-          emailVerified: true,
-          plan: 'pro',
-        };
-        const mockToken = 'mock_jwt_token_' + Math.random().toString(36).slice(2);
-        get().setToken(mockToken);
-        set({ user: mockUser });
+      mockLogin: async (name, email) => {
+        set({ loading: true });
+        try {
+          const res = await api.post('/auth/demo', { name, email });
+          const { access_token, user } = res.data;
+          get().setToken(access_token);
+          set({ user });
+        } catch (e) {
+          const mockUser: User = {
+            uid: 'user_' + Math.random().toString(36).slice(2),
+            email: email || 'demo.user@stockai.com',
+            displayName: name || 'Demo Trader',
+            photoURL: null,
+            emailVerified: true,
+            plan: 'pro',
+          };
+          const mockToken = 'mock_jwt_token_' + Math.random().toString(36).slice(2);
+          get().setToken(mockToken);
+          set({ user: mockUser });
+        } finally {
+          set({ loading: false });
+        }
       },
 
       logout: async () => {

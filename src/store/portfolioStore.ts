@@ -1,94 +1,170 @@
 import { create } from 'zustand';
 import type { Portfolio, PortfolioHolding } from '@/types';
+import { api } from '@/lib/api';
 
-const generatePortfolioHistory = () => {
-  const history = [];
-  const startValue = 85000;
-  let value = startValue;
-  for (let i = 180; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    value = value * (1 + (Math.random() - 0.46) * 0.015);
-    history.push({ date: date.toISOString().split('T')[0], value: parseFloat(value.toFixed(2)) });
+const EMPTY_PORTFOLIO: Portfolio = {
+  totalValue: 0,
+  totalCost: 0,
+  totalPnl: 0,
+  totalPnlPercent: 0,
+  dayPnl: 0,
+  dayPnlPercent: 0,
+  holdings: [],
+  sectorAllocation: [],
+  performanceHistory: [],
+};
+
+function calculateSectors(holdings: PortfolioHolding[]) {
+  const total = holdings.reduce((sum, h) => sum + h.currentValue, 0);
+  if (total === 0) return [];
+  const map: Record<string, number> = {};
+  for (const h of holdings) {
+    const sec = h.sector || 'Technology';
+    map[sec] = (map[sec] || 0) + h.currentValue;
   }
-  return history;
-};
-
-const MOCK_HOLDINGS: PortfolioHolding[] = [
-  { id: '1', symbol: 'AAPL', name: 'Apple Inc.', quantity: 50, avgCost: 165.20, currentPrice: 189.43, totalCost: 8260, currentValue: 9471.50, pnl: 1211.50, pnlPercent: 14.66, allocation: 21.2, sector: 'Technology' },
-  { id: '2', symbol: 'NVDA', name: 'NVIDIA Corp.', quantity: 10, avgCost: 720.00, currentPrice: 875.22, totalCost: 7200, currentValue: 8752.20, pnl: 1552.20, pnlPercent: 21.56, allocation: 19.6, sector: 'Technology' },
-  { id: '3', symbol: 'MSFT', name: 'Microsoft Corp.', quantity: 20, avgCost: 380.50, currentPrice: 414.28, totalCost: 7610, currentValue: 8285.60, pnl: 675.60, pnlPercent: 8.88, allocation: 18.5, sector: 'Technology' },
-  { id: '4', symbol: 'TSLA', name: 'Tesla Inc.', quantity: 30, avgCost: 260.00, currentPrice: 234.56, totalCost: 7800, currentValue: 7036.80, pnl: -763.20, pnlPercent: -9.78, allocation: 15.7, sector: 'Automotive' },
-  { id: '5', symbol: 'META', name: 'Meta Platforms', quantity: 12, avgCost: 460.00, currentPrice: 516.72, totalCost: 5520, currentValue: 6200.64, pnl: 680.64, pnlPercent: 12.33, allocation: 13.9, sector: 'Technology' },
-  { id: '6', symbol: 'JPM', name: 'JPMorgan Chase', quantity: 25, avgCost: 195.00, currentPrice: 206.54, totalCost: 4875, currentValue: 5163.50, pnl: 288.50, pnlPercent: 5.92, allocation: 11.5, sector: 'Financial' },
-];
-
-const totalCost = MOCK_HOLDINGS.reduce((sum, h) => sum + h.totalCost, 0);
-const totalValue = MOCK_HOLDINGS.reduce((sum, h) => sum + h.currentValue, 0);
-const totalPnl = totalValue - totalCost;
-
-const MOCK_PORTFOLIO: Portfolio = {
-  totalValue,
-  totalCost,
-  totalPnl,
-  totalPnlPercent: (totalPnl / totalCost) * 100,
-  dayPnl: 847.32,
-  dayPnlPercent: 1.93,
-  holdings: MOCK_HOLDINGS,
-  sectorAllocation: [
-    { sector: 'Technology', value: 32709.94, percent: 73.1 },
-    { sector: 'Automotive', value: 7036.80, percent: 15.7 },
-    { sector: 'Financial', value: 5163.50, percent: 11.5 },
-  ],
-  performanceHistory: generatePortfolioHistory(),
-};
+  return Object.entries(map).map(([sector, value]) => ({
+    sector,
+    value: parseFloat(value.toFixed(2)),
+    percent: parseFloat(((value / total) * 100).toFixed(1)),
+  }));
+}
 
 interface PortfolioState {
   portfolio: Portfolio;
-  addHolding: (holding: Omit<PortfolioHolding, 'id' | 'totalCost' | 'currentValue' | 'pnl' | 'pnlPercent' | 'allocation'>) => void;
-  removeHolding: (id: string) => void;
+  fetchPortfolio: () => Promise<void>;
+  addHolding: (holding: Omit<PortfolioHolding, 'id' | 'totalCost' | 'currentValue' | 'pnl' | 'pnlPercent' | 'allocation'>) => Promise<void>;
+  removeHolding: (id: string) => Promise<void>;
   updatePrices: (prices: Record<string, number>) => void;
 }
 
-export const usePortfolioStore = create<PortfolioState>()((set) => ({
-  portfolio: MOCK_PORTFOLIO,
+export const usePortfolioStore = create<PortfolioState>()((set, get) => ({
+  portfolio: EMPTY_PORTFOLIO,
 
-  addHolding: (holding) =>
+  fetchPortfolio: async () => {
+    try {
+      const res = await api.get('/portfolio/');
+      if (res.data) {
+        const rawHoldings = res.data.holdings || [];
+        const totalValue = res.data.total_value || 0;
+        const totalCost = res.data.total_cost || 0;
+        const totalPnl = res.data.total_pnl || 0;
+        const totalPnlPercent = res.data.total_pnl_percent || 0;
+
+        const holdings: PortfolioHolding[] = rawHoldings.map((h: any) => ({
+          id: h.id || h._id,
+          symbol: h.symbol,
+          name: h.name || h.symbol,
+          quantity: h.quantity,
+          avgCost: h.avg_cost || h.avgCost || 0,
+          currentPrice: h.current_price || h.currentPrice || 0,
+          totalCost: h.total_cost || h.totalCost || 0,
+          currentValue: h.current_value || h.currentValue || 0,
+          pnl: h.pnl || 0,
+          pnlPercent: h.pnl_percent || h.pnlPercent || 0,
+          allocation: totalValue > 0 ? ((h.current_value || h.currentValue || 0) / totalValue) * 100 : 0,
+          sector: h.sector || 'Technology',
+        }));
+
+        set({
+          portfolio: {
+            totalValue,
+            totalCost,
+            totalPnl,
+            totalPnlPercent,
+            dayPnl: 0,
+            dayPnlPercent: 0,
+            holdings,
+            sectorAllocation: calculateSectors(holdings),
+            performanceHistory: [],
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to fetch portfolio from API", e);
+    }
+  },
+
+  addHolding: async (holding) => {
+    const currentValue = holding.currentPrice * holding.quantity;
+    const totalCost = holding.avgCost * holding.quantity;
+    const pnl = currentValue - totalCost;
+
+    try {
+      await api.post('/portfolio/holdings', {
+        symbol: holding.symbol,
+        name: holding.name,
+        quantity: holding.quantity,
+        avg_cost: holding.avgCost,
+        current_price: holding.currentPrice,
+        sector: holding.sector,
+      });
+    } catch (e) {
+      console.warn("Failed to save holding to backend, updating local state", e);
+    }
+
     set((state) => {
-      const currentValue = holding.currentPrice * holding.quantity;
-      const totalCost = holding.avgCost * holding.quantity;
-      const pnl = currentValue - totalCost;
       const newHolding: PortfolioHolding = {
         ...holding,
         id: Math.random().toString(36).slice(2),
-        currentValue,
-        totalCost,
-        pnl,
-        pnlPercent: (pnl / totalCost) * 100,
+        currentValue: parseFloat(currentValue.toFixed(2)),
+        totalCost: parseFloat(totalCost.toFixed(2)),
+        pnl: parseFloat(pnl.toFixed(2)),
+        pnlPercent: totalCost > 0 ? parseFloat(((pnl / totalCost) * 100).toFixed(2)) : 0,
         allocation: 0,
       };
+
       const updatedHoldings = [...state.portfolio.holdings, newHolding];
-      const newTotal = updatedHoldings.reduce((s, h) => s + h.currentValue, 0);
+      const newTotalValue = updatedHoldings.reduce((s, h) => s + h.currentValue, 0);
+      const newTotalCost = updatedHoldings.reduce((s, h) => s + h.totalCost, 0);
+      const newTotalPnl = newTotalValue - newTotalCost;
+      const newTotalPnlPercent = newTotalCost > 0 ? (newTotalPnl / newTotalCost) * 100 : 0;
+
       const withAllocation = updatedHoldings.map((h) => ({
         ...h,
-        allocation: (h.currentValue / newTotal) * 100,
+        allocation: newTotalValue > 0 ? parseFloat(((h.currentValue / newTotalValue) * 100).toFixed(1)) : 0,
       }));
+
       return {
         portfolio: {
           ...state.portfolio,
+          totalValue: parseFloat(newTotalValue.toFixed(2)),
+          totalCost: parseFloat(newTotalCost.toFixed(2)),
+          totalPnl: parseFloat(newTotalPnl.toFixed(2)),
+          totalPnlPercent: parseFloat(newTotalPnlPercent.toFixed(2)),
           holdings: withAllocation,
-          totalValue: newTotal,
+          sectorAllocation: calculateSectors(withAllocation),
         },
       };
-    }),
+    });
+  },
 
-  removeHolding: (id) =>
-    set((state) => ({
-      portfolio: {
-        ...state.portfolio,
-        holdings: state.portfolio.holdings.filter((h) => h.id !== id),
-      },
-    })),
+  removeHolding: async (id) => {
+    try {
+      await api.delete(`/portfolio/holdings/${id}`);
+    } catch (e) {
+      console.warn("Failed to remove holding from backend", e);
+    }
+
+    set((state) => {
+      const updatedHoldings = state.portfolio.holdings.filter((h) => h.id !== id);
+      const newTotalValue = updatedHoldings.reduce((s, h) => s + h.currentValue, 0);
+      const newTotalCost = updatedHoldings.reduce((s, h) => s + h.totalCost, 0);
+      const newTotalPnl = newTotalValue - newTotalCost;
+      const newTotalPnlPercent = newTotalCost > 0 ? (newTotalPnl / newTotalCost) * 100 : 0;
+
+      return {
+        portfolio: {
+          ...state.portfolio,
+          totalValue: parseFloat(newTotalValue.toFixed(2)),
+          totalCost: parseFloat(newTotalCost.toFixed(2)),
+          totalPnl: parseFloat(newTotalPnl.toFixed(2)),
+          totalPnlPercent: parseFloat(newTotalPnlPercent.toFixed(2)),
+          holdings: updatedHoldings,
+          sectorAllocation: calculateSectors(updatedHoldings),
+        },
+      };
+    });
+  },
 
   updatePrices: (prices) =>
     set((state) => ({

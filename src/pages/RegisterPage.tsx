@@ -35,18 +35,14 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterForm) => {
-    console.log("onSubmit register starting with email:", data.email);
     setIsLoading(true);
     try {
       await registerUser(data.email, data.password, data.name);
       toast.success('Account created! Welcome to StockAI 🚀');
       navigate('/dashboard');
     } catch (error: any) {
-      console.error("signUpWithEmail caught error:", error);
-      // Fallback to mock session
-      mockLogin(data.name, data.email);
-      toast.success('Account created via Demo mode (Backend fallback)');
-      navigate('/dashboard');
+      const msg = error.response?.data?.detail || error.message || 'Registration failed';
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }

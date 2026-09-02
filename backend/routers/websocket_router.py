@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BASE_PRICES = {
-    "AAPL": 189.43, "MSFT": 414.28, "NVDA": 875.22, "GOOGL": 176.54,
-    "TSLA": 234.56, "META": 516.72, "AMZN": 193.67, "JPM": 206.54,
-    "AMD": 162.43, "NFLX": 687.34,
+    "AAPL": 326.77, "MSFT": 496.33, "NVDA": 225.96, "GOOGL": 337.32,
+    "TSLA": 353.93, "META": 594.85, "AMZN": 255.44, "JPM": 358.18,
+    "AMD": 459.45, "NFLX": 82.46,
 }
 
 

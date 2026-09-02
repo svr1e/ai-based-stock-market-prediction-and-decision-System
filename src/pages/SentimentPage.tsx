@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Newspaper, TrendingUp, TrendingDown, Minus, Globe, MessageSquare } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar, Cell } from 'recharts';
+import { Newspaper, TrendingUp, TrendingDown, Minus, Globe, MessageSquare, ExternalLink, RefreshCw } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
+import { api } from '@/lib/api';
 
 const SENTIMENT_STOCKS = [
   { symbol: 'AAPL', overall: 'positive', score: 0.72, confidence: 0.89, newsCount: 47, twitterCount: 12400, fearGreed: 68 },
@@ -16,9 +17,9 @@ const TREND_DATA = Array.from({ length: 14 }, (_, i) => {
   const d = new Date(); d.setDate(d.getDate() - (13 - i));
   return {
     date: d.toISOString().split('T')[0].slice(5),
-    positive: Math.round(40 + Math.random() * 30),
-    negative: Math.round(10 + Math.random() * 25),
-    neutral: Math.round(15 + Math.random() * 20),
+    positive: Math.round(40 + Math.sin(i) * 15 + 15),
+    negative: Math.round(15 + Math.cos(i) * 8 + 5),
+    neutral: Math.round(20 + Math.sin(i * 0.5) * 10),
   };
 });
 
@@ -27,8 +28,48 @@ const RADAR_DATA = [
   { subject: 'Analyst', A: 81 }, { subject: 'Earnings', A: 64 }, { subject: 'Options', A: 55 },
 ];
 
+interface Headline {
+  title: string;
+  sentiment: string;
+  score: number;
+  source: string;
+  url: string;
+  published_at?: string;
+}
+
 export default function SentimentPage() {
   const [selected, setSelected] = useState(SENTIMENT_STOCKS[0]);
+  const [headlines, setHeadlines] = useState<Headline[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSentiment() {
+      setIsLoading(true);
+      try {
+        const res = await api.get(`/sentiment/${selected.symbol}`);
+        if (isMounted && res.data) {
+          if (res.data.headlines) {
+            setHeadlines(res.data.headlines);
+          }
+          if (res.data.score !== undefined) {
+            setSelected((prev) => ({
+              ...prev,
+              overall: res.data.overall || prev.overall,
+              score: res.data.score,
+              fearGreed: res.data.fear_greed_index || prev.fearGreed,
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch sentiment from backend", e);
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    fetchSentiment();
+    return () => { isMounted = false; };
+  }, [selected.symbol]);
 
   const getSentimentColor = (s: string) => s === 'positive' ? 'text-neon-green' : s === 'negative' ? 'text-red-400' : 'text-gray-400';
   const getSentimentBg = (s: string) => s === 'positive' ? 'bg-neon-green/10 border-neon-green/20' : s === 'negative' ? 'bg-red-400/10 border-red-400/20' : 'bg-gray-400/10 border-gray-400/20';
@@ -37,7 +78,7 @@ export default function SentimentPage() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="font-display text-2xl font-bold text-white">Sentiment Analysis</h1>
-        <p className="text-gray-400 text-sm mt-1">FinBERT-powered NLP on news, Twitter & Reddit</p>
+        <p className="text-gray-400 text-sm mt-1">FinBERT-powered NLP on live news, Twitter & Reddit feeds</p>
       </div>
 
       {/* Sentiment Cards */}
@@ -62,7 +103,7 @@ export default function SentimentPage() {
               <div
                 className="neon-progress-bar"
                 style={{
-                  width: `${Math.abs(s.score) * 100}%`,
+                  width: `${Math.min(100, Math.abs(s.score) * 100)}%`,
                   background: s.overall === 'positive' ? 'linear-gradient(90deg,#00FF88,#00E5FF)' : 'linear-gradient(90deg,#FF4444,#FF0080)',
                 }}
               />
@@ -112,7 +153,7 @@ export default function SentimentPage() {
           <div className="space-y-2 mt-4">
             <div className="flex justify-between text-xs">
               <span className="text-gray-400">News Articles</span>
-              <span className="text-white font-medium">{selected.newsCount}</span>
+              <span className="text-white font-medium">{headlines.length || selected.newsCount}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-gray-400">Twitter Mentions</span>
@@ -129,6 +170,44 @@ export default function SentimentPage() {
               <span className="text-[#00E5FF] font-bold">{selected.fearGreed} / 100</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Live News Headlines Stream */}
+      <div className="glass-card rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-white flex items-center gap-2">
+            <Newspaper className="w-4 h-4 text-[#00E5FF]" />
+            Live NLP News Feed for {selected.symbol}
+          </h2>
+          {isLoading && <RefreshCw className="w-4 h-4 text-[#00E5FF] animate-spin" />}
+        </div>
+        <div className="space-y-3">
+          {headlines.map((item, idx) => (
+            <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white/3 border border-white/5 hover:border-white/10 transition">
+              <div className="space-y-1 max-w-3xl">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-gray-400">
+                    {item.source}
+                  </span>
+                  <span className={`text-[10px] font-bold capitalize px-2 py-0.5 rounded border ${getSentimentBg(item.sentiment)} ${getSentimentColor(item.sentiment)}`}>
+                    {item.sentiment} ({item.score >= 0 ? '+' : ''}{item.score})
+                  </span>
+                </div>
+                <h3 className="text-sm font-medium text-white line-clamp-1">{item.title}</h3>
+              </div>
+              {item.url && item.url !== '#' && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-[#00E5FF] hover:underline self-start sm:self-center shrink-0"
+                >
+                  Read Article <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
